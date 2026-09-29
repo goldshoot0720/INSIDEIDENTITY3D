@@ -41,8 +41,13 @@ export function blendSpec(out, a, b, w) {
   out.chest.slerpQuaternions(a.chest, b.chest, w);
   out.head.slerpQuaternions(a.head, b.head, w);
   const keys = new Set([...Object.keys(a.dirs), ...Object.keys(b.dirs)]);
+  // a hand without a target rests in line with its forearm; blend toward that instead of
+  // holding the other pose's hand forever (out may be a, so read the forearms up front)
+  const handRest = (s, k) => k.endsWith('Hand') && s.dirs[k.slice(0, -4) + 'ForeArm']?.clone();
+  const fa = {}, fb = {};
+  for (const k of keys) { fa[k] = a.dirs[k] || handRest(a, k); fb[k] = b.dirs[k] || handRest(b, k); }
   for (const k of keys) {
-    const va = a.dirs[k], vb = b.dirs[k];
+    const va = fa[k], vb = fb[k];
     if (va && vb) (out.dirs[k] ||= new THREE.Vector3()).lerpVectors(va, vb, w).normalize();
     else if (w >= 0.5 && vb) (out.dirs[k] ||= new THREE.Vector3()).copy(vb);
     else if (w < 0.5 && va) (out.dirs[k] ||= new THREE.Vector3()).copy(va);

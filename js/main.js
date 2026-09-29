@@ -11,16 +11,27 @@ import { choreoSpec, sectionAt, idleSpec, MOVE_LABEL } from './choreo.js';
 import { Stage } from './stage.js';
 import { YouTubeSource, parseYouTubeId } from './youtube.js';
 
+// sig: signature move for the 個人秀 section (sigMirror: perform it left-handed)
 const CHARACTERS = [
-  { file: 'models/Dpskmusume.fbx', name: 'Dpskmusume', color: '#ff2a4a' },
-  { file: 'models/Gugugaga-pose.fbx', name: 'Gugugaga', color: '#ffd23f' },
-  { file: 'models/Yamei.fbx', name: 'Yamei', color: '#3fd7ff' },
-  { file: 'models/Yumei-pose.fbx', name: 'Yumei', color: '#c77dff' },
+  { file: 'models/Dpskmusume.fbx', name: 'Dpskmusume', color: '#ff2a4a', sig: 'vanish' },
+  { file: 'models/Gugugaga-pose.fbx', name: 'Gugugaga', color: '#ffd23f', sig: 'guitar' },
+  { file: 'models/Yamei.fbx', name: '牙妹 Yamei', color: '#3fd7ff', sig: 'mic' },
+  { file: 'models/Yumei-pose.fbx', name: '魚妹 Yumei', color: '#c77dff', sig: 'heart' },
+  { file: 'models/fengbro-pose.fbx', name: '鋒兄 Fengbro', color: '#ff8a3d', sig: 'cash' },
+  { file: 'models/Tu-pose.fbx', name: '小塗 Tu', color: '#4dff9a', sig: 'wrench' },
+  { file: 'models/Miabubu-pose.fbx', name: 'Miabubu', color: '#ff7ad9', sig: 'paw' },
+  { file: 'models/Miabyby-pose.fbx', name: 'Miabyby', color: '#7a9bff', sig: 'paw', sigMirror: true },
 ];
+// front row (first four characters) and a staggered back row behind the gaps
 const SLOTS = [
-  { x: -2.1, z: -0.35, yaw: 0.14 }, { x: -0.7, z: 0.15, yaw: 0.05 },
-  { x: 0.7, z: 0.15, yaw: -0.05 }, { x: 2.1, z: -0.35, yaw: -0.14 },
+  { x: -2.1, z: 0.3, yaw: 0.12 }, { x: -0.7, z: 0.6, yaw: 0.04 },
+  { x: 0.7, z: 0.6, yaw: -0.04 }, { x: 2.1, z: 0.3, yaw: -0.12 },
+  { x: -2.8, z: -0.85, yaw: 0.16 }, { x: -1.4, z: -0.7, yaw: 0.06 },
+  { x: 1.4, z: -0.7, yaw: -0.06 }, { x: 2.8, z: -0.85, yaw: -0.16 },
 ];
+// canon position: left-to-right rank scaled so a full canon still spans 3 steps
+const byX = [...SLOTS].sort((a, b) => a.x - b.x);
+SLOTS.forEach((s) => { s.k = (byX.indexOf(s) * 3) / (SLOTS.length - 1); });
 const HEIGHT = 1.62;
 const $ = (id) => document.getElementById(id);
 
@@ -75,7 +86,11 @@ function resize() {
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
   bloom.resolution.set(w, h);
-  camera.aspect = w / h;
+  // wide screens: the side panel covers the right edge, so centre the stage in the space left of it
+  const p = w > 720 ? $('panel').offsetWidth + 16 : 0;
+  camera.aspect = (w + p) / h;
+  if (p) camera.setViewOffset(w + p, h, p, 0, w, h);
+  else camera.clearViewOffset();
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
@@ -220,18 +235,23 @@ const SHOTS = [
   (u, c) => close(c, u),
   (u) => ({ p: [0, 0.3, 4.6 - 0.5 * u], t: [0, 1.5, 0] }),
 ];
+// close-ups cycle through the characters that are currently shown
+const onStage = () => { const v = chars.filter((ch) => ch.visible); return v.length ? v : chars; };
 function close(c, u) {
-  const ch = chars[c % chars.length];
+  const pool = onStage(), ch = pool[c % pool.length];
   const x = ch ? ch.obj.position.x : 0, z = ch ? ch.obj.position.z : 0;
-  return { p: [x + 0.4 - 0.5 * u, 1.4, z + 2.6 - 0.4 * u], t: [x, 1.2, z] };
+  const lift = ch && ch.slot.z < 0 ? 0.4 : 0; // look over the front row
+  return { p: [x + 0.4 - 0.5 * u, 1.4 + lift, z + 2.6 - 0.4 * u], t: [x, 1.2, z] };
 }
+// 個人秀: the featured character changes every two beats
+const featured = (beat) => Math.floor(Math.max(0, beat) / 2);
 
-function direct(beat, vanish) {
-  const len = vanish ? 2 : 4;
+function direct(beat, vanish, solo) {
+  const len = vanish || solo ? 2 : 4;
   const n = Math.floor(beat / len);
   const u = (beat % len) / len;
-  const shotIdx = vanish ? 2 : n % SHOTS.length;
-  const c = vanish ? n % 4 : Math.floor(n / 2) % 4;
+  const shotIdx = vanish || solo ? 2 : n % SHOTS.length;
+  const c = solo ? featured(beat) : vanish ? n : Math.floor(n / 2);
   const key = shotIdx * 100 + c + n * 1000;
   if (key !== state.lastShot) { state.lastShot = key; state.spike = 1; }
   const s = SHOTS[shotIdx](u, c);
@@ -261,6 +281,8 @@ function setMode(mode) {
   state.mirror = mode === 'camera';
   $('mirror').checked = state.mirror;
   history.length = 0;
+  // foot targets only come from tracking; drop them so the rig's flat-foot default takes over
+  for (const c of chars) for (const k of ['LeftFoot', 'RightFoot']) delete c.cur.dirs[k];
   if (mode !== 'dance') { if (state.playing) togglePlay(); ensureTracker(); }
   else { tracker?.stop(); $('camBtn').textContent = '開啟攝像頭'; }
   setStatus(mode === 'dance' ? (state.playing ? '播放中' : '暫停') : '等待影像');
@@ -416,7 +438,7 @@ function trackingTargets(now) {
   while (history.length && history[0].t < now - 2) history.shift();
   return chars.map((c, i) => {
     if (now - lastSeen > 1 || !history.length) return idleSpec(now * 1.6);
-    const want = now - state.delay * i;
+    const want = now - state.delay * c.slot.k;
     let e = history[0];
     for (const h of history) { if (h.t <= want) e = h; else break; }
     return e.specs[i % e.specs.length];
@@ -440,12 +462,16 @@ function frame() {
   if (state.mode === 'dance') {
     sec = sectionAt(beat);
     const idle = !state.playing && beat <= 0;
-    targets = chars.map((_, i) => (idle ? idleSpec(now * 1.2) : choreoSpec(beat, i)));
+    targets = chars.map((c, i) => (idle ? idleSpec(now * 1.2)
+      : choreoSpec(beat, i, { k: c.slot.k, sig: c.sig, sigMirror: c.sigMirror })));
     if (sec.idx !== state.lastSection) {
       if (state.lastSection !== -1 && sec.call) callout(sec.call);
       state.lastSection = sec.idx;
     }
-    $('hudMove').textContent = MOVE_LABEL[sec.move];
+    if (sec.move === 'solo') {
+      const pool = onStage(), star = pool[featured(beat) % pool.length];
+      $('hudMove').textContent = `個人秀 · ${star.name}「${MOVE_LABEL[star.sig]}」`;
+    } else $('hudMove').textContent = MOVE_LABEL[sec.move];
   } else {
     targets = landmarksToSpec ? trackingTargets(now) : chars.map(() => idleSpec(now));
     $('hudMove').textContent = state.mode === 'camera' ? '攝像頭模仿' : '影片模仿';
@@ -468,7 +494,7 @@ function frame() {
   });
 
   const vanish = sec?.move === 'vanish';
-  if (state.autoCam) direct(beat, vanish && state.mode === 'dance');
+  if (state.autoCam) direct(beat, vanish && state.mode === 'dance', sec?.move === 'solo');
   else controls.update();
 
   stage.update(now, beat, en * state.fx);
