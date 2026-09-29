@@ -9,6 +9,7 @@ import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { Rig, makeSpec, copySpec, blendSpec } from './rig.js';
 import { choreoSpec, sectionAt, idleSpec, MOVE_LABEL } from './choreo.js';
 import { Stage } from './stage.js';
+import { YouTubeSource, parseYouTubeId } from './youtube.js';
 
 const CHARACTERS = [
   { file: 'models/Dpskmusume.fbx', name: 'Dpskmusume', color: '#ff2a4a' },
@@ -172,9 +173,21 @@ async function loadCharacters() {
 const state = {
   mode: 'dance', playing: false, bpm: 190, offset: 0, beatClock: 0,
   mirror: true, delay: 0, smooth: 0.5, autoCam: true, fx: 1,
-  lastSection: -1, lastShot: -1, spike: 0,
+  lastSection: -1, lastShot: -1, spike: 0, songT: 0,
 };
 const music = $('music');
+let song = null; // 'file' | 'yt' | null — the clock the beat grid follows
+const yt = new YouTubeSource('ytPlayer', {
+  onState: (s) => {
+    if (s === 5 || s === 1) $('ytTitle').textContent = yt.title ? `▶ ${yt.title}` : '';
+    if (song !== 'yt') return;
+    if (s === 1) syncPlayUI(true);
+    else if (s === 2 || s === 0) syncPlayUI(false);
+  },
+  onError: (msg) => { $('ytTitle').textContent = msg; setStatus(msg); },
+});
+const songPlaying = () => (song === 'file' ? !music.paused : song === 'yt' ? yt.playing : false);
+const songTime = (dt) => (song === 'file' ? music.currentTime : song === 'yt' ? yt.time(dt) : 0);
 let audioCtx, analyser, freq;
 let tracker = null;
 const history = []; // [{t, specs}]
@@ -182,12 +195,12 @@ let lastSeen = -10;
 
 function beatNow() {
   if (state.mode !== 'dance') return performance.now() / 1000 * 2;
-  if (music.src && !music.paused) return (music.currentTime - state.offset) * state.bpm / 60;
+  if (song) return (state.songT - state.offset) * state.bpm / 60;
   return state.beatClock;
 }
 
 function energy() {
-  if (analyser && !music.paused) {
+  if (song === 'file' && analyser && !music.paused) {
     analyser.getByteFrequencyData(freq);
     let s = 0;
     for (let i = 1; i < 12; i++) s += freq[i];
@@ -248,7 +261,7 @@ function setMode(mode) {
   state.mirror = mode === 'camera';
   $('mirror').checked = state.mirror;
   history.length = 0;
-  if (mode !== 'dance') { if (!music.paused) togglePlay(); ensureTracker(); }
+  if (mode !== 'dance') { if (state.playing) togglePlay(); ensureTracker(); }
   else { tracker?.stop(); $('camBtn').textContent = '開啟攝像頭'; }
   setStatus(mode === 'dance' ? (state.playing ? '播放中' : '暫停') : '等待影像');
 }
@@ -272,21 +285,32 @@ function ensureAudio() {
   src.connect(analyser).connect(audioCtx.destination);
 }
 
+function syncPlayUI(playing) {
+  state.playing = playing;
+  $('play').textContent = playing ? '❚❚ 暫停' : '▶ 播放';
+  setStatus(playing ? '播放中' : '暫停');
+}
+
 function togglePlay() {
-  state.playing = !state.playing;
-  if (music.src) {
+  const next = !state.playing;
+  if (song === 'file') {
     ensureAudio();
     audioCtx.resume();
-    state.playing ? music.play() : music.pause();
+    next ? music.play() : music.pause();
+  } else if (song === 'yt') {
+    next ? yt.play() : yt.pause();
   }
-  $('play').textContent = state.playing ? '❚❚ 暫停' : '▶ 播放';
-  setStatus(state.playing ? '播放中' : '暫停');
+  syncPlayUI(next);
 }
 
 function bindUI() {
   document.querySelectorAll('#modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
   $('play').onclick = togglePlay;
-  $('restart').onclick = () => { state.beatClock = 0; music.currentTime = 0; state.lastSection = -1; };
+  $('restart').onclick = () => {
+    state.beatClock = 0; state.lastSection = -1;
+    if (song === 'file') music.currentTime = 0;
+    if (song === 'yt') yt.seek(0);
+  };
   $('bpm').oninput = (e) => { state.bpm = +e.target.value || 190; };
   $('offset').oninput = (e) => { state.offset = +e.target.value || 0; };
   const taps = [];
@@ -299,8 +323,8 @@ function bindUI() {
       const bpm = Math.round(60000 / ((taps[taps.length - 1] - taps[0]) / (taps.length - 1)));
       state.bpm = bpm; $('bpm').value = bpm;
       // align the beat grid to the latest tap when music is playing
-      if (music.src && !music.paused) {
-        const beat = (music.currentTime - state.offset) * bpm / 60;
+      if (song && songPlaying()) {
+        const beat = (state.songT - state.offset) * bpm / 60;
         const off = +(state.offset + (beat - Math.round(beat)) * 60 / bpm).toFixed(3);
         state.offset = off; $('offset').value = off;
       }
@@ -311,8 +335,27 @@ function bindUI() {
     if (music.src.startsWith('blob:')) URL.revokeObjectURL(music.src);
     music.src = URL.createObjectURL(file);
     $('musicDrop').firstChild.textContent = `♪ ${file.name}`;
+    if (song === 'yt') yt.pause();
+    song = 'file';
     state.playing = false; togglePlay();
   };
+  const loadYT = async () => {
+    const id = parseYouTubeId($('ytUrl').value);
+    if (!id) { $('ytTitle').textContent = '無法辨識 YouTube 網址或影片 ID'; return; }
+    if (song === 'file') music.pause();
+    song = 'yt';
+    syncPlayUI(false);
+    $('ytBox').hidden = false;
+    $('ytTitle').textContent = '載入 YouTube 中…';
+    try { await yt.load(id); setStatus('YouTube 已就緒，按 ▶ 播放'); }
+    catch (err) {
+      // fall back to the metronome clock so the dance doesn't freeze
+      if (!yt.ready) { song = null; $('ytBox').hidden = true; }
+      $('ytTitle').textContent = err.message; setStatus(err.message);
+    }
+  };
+  $('ytLoad').onclick = loadYT;
+  $('ytUrl').onkeydown = (e) => { if (e.key === 'Enter') loadYT(); };
   $('musicFile').onchange = (e) => loadMusic(e.target.files[0]);
   $('camBtn').onclick = async () => {
     const t = await ensureTracker();
@@ -387,7 +430,8 @@ const clock = new THREE.Clock();
 function frame() {
   const dt = Math.min(clock.getDelta(), 0.1);
   const now = clock.elapsedTime;
-  if (state.mode === 'dance' && state.playing && !(music.src && !music.paused)) state.beatClock += dt * state.bpm / 60;
+  if (song) state.songT = songTime(dt);
+  else if (state.mode === 'dance' && state.playing) state.beatClock += dt * state.bpm / 60;
   const beat = beatNow();
   const en = energy();
 

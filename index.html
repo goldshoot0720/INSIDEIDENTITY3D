@@ -75,6 +75,11 @@
   .btns { display: flex; gap: 6px; }
   .btns .btn { flex: 1; }
   input[type=number] { width: 72px; background: rgba(0,0,0,.35); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 6px; font: inherit; }
+  input[type=text] { flex: 1; min-width: 0; background: rgba(0,0,0,.35); border: 1px solid var(--line); color: var(--text); border-radius: 6px; padding: 8px; font: inherit; font-size: 12px; }
+  input[type=text]:focus, input[type=number]:focus { outline: none; border-color: var(--accent); }
+  .yt { aspect-ratio: 16 / 9; border-radius: 8px; overflow: hidden; border: 1px solid var(--line); background: #000; margin: 8px 0 0; }
+  .yt iframe { width: 100%; height: 100%; display: block; border: 0; }
+  #ytTitle:empty { display: none; }
   input[type=range] { flex: 1.3; accent-color: var(--accent); }
   input[type=checkbox] { accent-color: var(--accent); width: 16px; height: 16px; }
   .file { display: block; border: 1px dashed var(--line); border-radius: 8px; padding: 10px; text-align: center; color: var(--muted); cursor: pointer; }
@@ -148,11 +153,14 @@
 
   <section id="secDance">
     <h2>音樂與節拍</h2>
-    <label class="file" id="musicDrop">載入歌曲 (mp3 / m4a…)<input type="file" id="musicFile" accept="audio/*"></label>
+    <div class="row"><input type="text" id="ytUrl" placeholder="YouTube 網址或影片 ID" value="https://www.youtube.com/watch?v=hNQdpqp_VdY" spellcheck="false"><button class="btn" id="ytLoad">載入</button></div>
+    <div class="yt" id="ytBox" hidden><div id="ytPlayer"></div></div>
+    <p class="note" id="ytTitle"></p>
+    <label class="file" id="musicDrop">或載入本地音檔 (mp3 / m4a…)<input type="file" id="musicFile" accept="audio/*"></label>
     <div class="row"><label>BPM</label><input type="number" id="bpm" value="190" min="60" max="260" step="1"><button class="btn" id="tap">Tap</button></div>
     <div class="row"><label>起拍偏移 (秒)</label><input type="number" id="offset" value="0" step="0.05"></div>
     <div class="btns"><button class="btn primary" id="play">▶ 播放</button><button class="btn" id="restart">⟲ 從頭</button></div>
-    <p class="note">無音樂時按節拍器時鐘跳舞。載入歌曲後，用 Tap 對拍並調整偏移。</p>
+    <p class="note">無音樂時按節拍器時鐘跳舞。載入 YouTube 或音檔後，跟著歌按 Tap 對拍，再微調偏移。</p>
   </section>
 
   <section id="secCamera" hidden>
