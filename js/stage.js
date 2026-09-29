@@ -121,8 +121,8 @@ export class Stage {
     this.group.add(this.particles);
 
     // lights
-    scene.add(new THREE.HemisphereLight(0xffe8ef, 0x200008, 0.9));
-    const key = new THREE.DirectionalLight(0xffffff, 1.6);
+    scene.add(new THREE.HemisphereLight(0xffe8ef, 0x200008, 0.7));
+    const key = new THREE.DirectionalLight(0xffffff, 1.2);
     key.position.set(2, 6, 6);
     key.castShadow = true;
     key.shadow.mapSize.set(2048, 2048);

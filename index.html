@@ -89,6 +89,8 @@
   .chars { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
   .chars label { display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,.04); padding: 6px 8px; border-radius: 6px; cursor: pointer; font-size: 12px; }
   .chars i { width: 8px; height: 8px; border-radius: 50%; flex: none; }
+  .chars label.off { opacity: .4; cursor: not-allowed; }
+  .panel h2 .count { float: right; letter-spacing: .05em; color: var(--text); }
   [hidden] { display: none !important; }
   #toggle { display: none; }
 
@@ -127,7 +129,7 @@
 
 <div class="title">
   <h1 data-text="INSIDE IDENTITY">INSIDE IDENTITY</h1>
-  <p>3D Motion Mimic · 動作模仿 · 8 人舞台</p>
+  <p>3D Motion Mimic · 動作模仿 · 8 選 4</p>
 </div>
 
 <div class="hud">
@@ -173,7 +175,7 @@
     <h2>舞蹈影片</h2>
     <label class="file" id="videoDrop">選擇或拖入影片檔<input type="file" id="videoFile" accept="video/*"></label>
     <div class="row"><label>播放速度</label><input type="range" id="rate" min="0.25" max="1.5" step="0.05" value="1"><span id="rateVal">1.00×</span></div>
-    <p class="note">影片中最多 4 人，按左→右分配給前排 4 位角色，後排依序跟跳同一人；只有 1 人時全員跟跳。點擊左下預覽可暫停。</p>
+    <p class="note">影片中最多 4 人，按左→右分配給台上角色；只有 1 人時全員跟跳。點擊左下預覽可暫停。</p>
   </section>
 
   <section id="secTrack" hidden>
@@ -184,10 +186,11 @@
 
   <h2>畫面</h2>
   <div class="row"><label>自動運鏡</label><input type="checkbox" id="autoCam" checked></div>
-  <div class="row"><label>特效強度</label><input type="range" id="fx" min="0" max="1.5" step="0.05" value="1"></div>
+  <div class="row"><label>特效強度</label><input type="range" id="fx" min="0" max="1.5" step="0.05" value="0"></div>
 
-  <h2>角色</h2>
+  <h2>角色 <span class="count" id="charCount"></span></h2>
   <div class="chars" id="chars"></div>
+  <p class="note">8 位角色中最多同時選 4 位上台。</p>
 </aside>
 
 <div id="loading"><div><div class="t">INSIDE IDENTITY</div><div class="bar"><div id="loadBar"></div></div><small id="loadText">載入 8 位角色中…</small></div></div>

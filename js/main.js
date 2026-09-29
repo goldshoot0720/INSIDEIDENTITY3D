@@ -22,16 +22,19 @@ const CHARACTERS = [
   { file: 'models/Miabubu-pose.fbx', name: 'Miabubu', color: '#ff7ad9', sig: 'paw' },
   { file: 'models/Miabyby-pose.fbx', name: 'Miabyby', color: '#7a9bff', sig: 'paw', sigMirror: true },
 ];
-// front row (first four characters) and a staggered back row behind the gaps
-const SLOTS = [
-  { x: -2.1, z: 0.3, yaw: 0.12 }, { x: -0.7, z: 0.6, yaw: 0.04 },
-  { x: 0.7, z: 0.6, yaw: -0.04 }, { x: 2.1, z: 0.3, yaw: -0.12 },
-  { x: -2.8, z: -0.85, yaw: 0.16 }, { x: -1.4, z: -0.7, yaw: 0.06 },
-  { x: 1.4, z: -0.7, yaw: -0.06 }, { x: 2.8, z: -0.85, yaw: -0.16 },
-];
+// up to MAX_ON_STAGE of the roster dance at once, in one gently curved row
+const MAX_ON_STAGE = 4;
+const LAYOUTS = {
+  1: [{ x: 0, z: 0.6, yaw: 0 }],
+  2: [{ x: -0.8, z: 0.55, yaw: 0.05 }, { x: 0.8, z: 0.55, yaw: -0.05 }],
+  3: [{ x: -1.5, z: 0.4, yaw: 0.1 }, { x: 0, z: 0.6, yaw: 0 }, { x: 1.5, z: 0.4, yaw: -0.1 }],
+  4: [
+    { x: -2.1, z: 0.3, yaw: 0.12 }, { x: -0.7, z: 0.6, yaw: 0.04 },
+    { x: 0.7, z: 0.6, yaw: -0.04 }, { x: 2.1, z: 0.3, yaw: -0.12 },
+  ],
+};
 // canon position: left-to-right rank scaled so a full canon still spans 3 steps
-const byX = [...SLOTS].sort((a, b) => a.x - b.x);
-SLOTS.forEach((s) => { s.k = (byX.indexOf(s) * 3) / (SLOTS.length - 1); });
+Object.values(LAYOUTS).forEach((l) => l.forEach((s, j) => { s.k = l.length > 1 ? (j * 3) / (l.length - 1) : 0; }));
 const HEIGHT = 1.62;
 const $ = (id) => document.getElementById(id);
 
@@ -42,7 +45,7 @@ renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.05;
+renderer.toneMappingExposure = 0.95;
 
 const scene = new THREE.Scene();
 const camera = new THREE.PerspectiveCamera(38, 1, 0.05, 100);
@@ -101,8 +104,8 @@ const chars = [];
 
 function toonify(mat) {
   const m = new THREE.MeshStandardMaterial({
-    map: mat.map || null, color: 0xffffff, roughness: 0.85, metalness: 0,
-    emissive: 0xffffff, emissiveMap: mat.map || null, emissiveIntensity: 0.28,
+    map: mat.map || null, color: 0xffffff, roughness: 0.95, metalness: 0,
+    emissive: 0xffffff, emissiveMap: mat.map || null, emissiveIntensity: 0.1,
     transparent: mat.transparent, alphaTest: mat.alphaTest || 0, side: THREE.FrontSide,
   });
   if (m.map) m.map.colorSpace = THREE.SRGBColorSpace;
@@ -111,7 +114,7 @@ function toonify(mat) {
     sh.fragmentShader = 'uniform vec3 rimColor;\n' + sh.fragmentShader.replace(
       '#include <opaque_fragment>',
       'float rim = pow(1.0 - clamp(dot(normalize(vViewPosition), normal), 0.0, 1.0), 3.0);\n' +
-      'outgoingLight += rimColor * rim * 0.9;\n#include <opaque_fragment>',
+      'outgoingLight += rimColor * rim * 0.4;\n#include <opaque_fragment>',
     );
   };
   return m;
@@ -172,22 +175,29 @@ async function loadCharacters() {
     const h = box.max.y - box.min.y;
     const s = HEIGHT / h;
     obj.scale.multiplyScalar(s);
-    const slot = SLOTS[i];
     const baseY = -box.min.y * s;
-    obj.position.set(slot.x, baseY, slot.z);
-    obj.rotation.y = slot.yaw;
+    obj.position.set(0, baseY, 0);
     scene.add(obj);
     obj.updateMatrixWorld(true);
     const rig = new Rig(obj);
     const restFootY = rig.footMinY();
-    chars.push({ ...CHARACTERS[i], obj, rig, slot, baseY, restFootY, ground: 0, cur: makeSpec(), started: false, visible: true });
+    chars.push({ ...CHARACTERS[i], obj, rig, slot: LAYOUTS[1][0], rank: 0, baseY, restFootY, ground: 0, cur: makeSpec(), started: false, visible: i < MAX_ON_STAGE });
   });
+  arrangeStage();
+}
+
+// place the selected characters left-to-right in roster order
+function arrangeStage() {
+  const shown = chars.filter((c) => c.visible);
+  const layout = LAYOUTS[shown.length];
+  shown.forEach((c, j) => { c.slot = layout[j]; c.rank = j; });
+  chars.forEach((c) => { c.obj.visible = c.visible; });
 }
 
 // ---------- state ----------
 const state = {
   mode: 'dance', playing: false, bpm: 190, offset: 0, beatClock: 0,
-  mirror: true, delay: 0, smooth: 0.5, autoCam: true, fx: 1,
+  mirror: true, delay: 0, smooth: 0.5, autoCam: true, fx: 0,
   lastSection: -1, lastShot: -1, spike: 0, songT: 0,
 };
 const music = $('music');
@@ -240,8 +250,7 @@ const onStage = () => { const v = chars.filter((ch) => ch.visible); return v.len
 function close(c, u) {
   const pool = onStage(), ch = pool[c % pool.length];
   const x = ch ? ch.obj.position.x : 0, z = ch ? ch.obj.position.z : 0;
-  const lift = ch && ch.slot.z < 0 ? 0.4 : 0; // look over the front row
-  return { p: [x + 0.4 - 0.5 * u, 1.4 + lift, z + 2.6 - 0.4 * u], t: [x, 1.2, z] };
+  return { p: [x + 0.4 - 0.5 * u, 1.4, z + 2.6 - 0.4 * u], t: [x, 1.2, z] };
 }
 // 個人秀: the featured character changes every two beats
 const featured = (beat) => Math.floor(Math.max(0, beat) / 2);
@@ -413,12 +422,29 @@ function bindUI() {
   addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); if (state.mode === 'dance') togglePlay(); } });
 
   const box = $('chars');
-  chars.forEach((c) => {
+  const inputs = chars.map((c) => {
     const l = document.createElement('label');
-    l.innerHTML = `<input type="checkbox" checked><i style="background:${c.color}"></i>${c.name}`;
-    l.querySelector('input').onchange = (e) => { c.visible = e.target.checked; c.obj.visible = c.visible; };
+    l.innerHTML = `<input type="checkbox"${c.visible ? ' checked' : ''}><i style="background:${c.color}"></i>${c.name}`;
+    const input = l.querySelector('input');
+    input.onchange = () => {
+      c.visible = input.checked;
+      if (c.visible) c.started = false; // snap to the current move instead of blending from a stale pose
+      arrangeStage();
+      syncPicks();
+    };
     box.appendChild(l);
+    return input;
   });
+  // at most MAX_ON_STAGE picked, and never an empty stage
+  const syncPicks = () => {
+    const n = chars.filter((c) => c.visible).length;
+    inputs.forEach((input, i) => {
+      input.disabled = chars[i].visible ? n <= 1 : n >= MAX_ON_STAGE;
+      input.parentElement.classList.toggle('off', input.disabled);
+    });
+    $('charCount').textContent = `${n} / ${MAX_ON_STAGE}`;
+  };
+  syncPicks();
 }
 
 // ---------- per-frame ----------
@@ -436,12 +462,12 @@ function trackingTargets(now) {
     tracker.draw(state.mirror);
   }
   while (history.length && history[0].t < now - 2) history.shift();
-  return chars.map((c, i) => {
+  return chars.map((c) => {
     if (now - lastSeen > 1 || !history.length) return idleSpec(now * 1.6);
     const want = now - state.delay * c.slot.k;
     let e = history[0];
     for (const h of history) { if (h.t <= want) e = h; else break; }
-    return e.specs[i % e.specs.length];
+    return e.specs[c.rank % e.specs.length];
   });
 }
 
@@ -462,8 +488,8 @@ function frame() {
   if (state.mode === 'dance') {
     sec = sectionAt(beat);
     const idle = !state.playing && beat <= 0;
-    targets = chars.map((c, i) => (idle ? idleSpec(now * 1.2)
-      : choreoSpec(beat, i, { k: c.slot.k, sig: c.sig, sigMirror: c.sigMirror })));
+    targets = chars.map((c) => (idle ? idleSpec(now * 1.2)
+      : choreoSpec(beat, c.rank, { k: c.slot.k, sig: c.sig, sigMirror: c.sigMirror })));
     if (sec.idx !== state.lastSection) {
       if (state.lastSection !== -1 && sec.call) callout(sec.call);
       state.lastSection = sec.idx;
@@ -482,6 +508,7 @@ function frame() {
   const rate = state.mode === 'dance' ? 22 : 30 * (1.05 - state.smooth);
   const a = 1 - Math.exp(-dt * rate);
   chars.forEach((c, i) => {
+    if (!c.visible) return;
     if (!c.started) { copySpec(c.cur, targets[i]); c.started = true; }
     else blendSpec(c.cur, c.cur, targets[i], a);
     const { obj, slot, rig, cur } = c;
