@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>INSIDE IDENTITY PV</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Dela+Gothic+One&family=Zen+Maru+Gothic:wght@900&family=Noto+Sans+TC:wght@500;700;900&family=JetBrains+Mono:wght@500;700&display=block" rel="stylesheet">
+<style>
+  :root { color-scheme: dark; --accent: #ff2a4a; --line: rgba(255, 42, 74, 0.35); }
+  html, body { margin: 0; height: 100%; background: #050003; color: #f3e9ee; overflow: hidden; font: 14px/1.45 "Noto Sans TC", system-ui, sans-serif; }
+  body { display: grid; place-items: center; }
+  #pv { width: min(100vw, calc(100vh * 16 / 9)); aspect-ratio: 16 / 9; display: block; background: #000; }
+  #ui { position: fixed; left: 50%; bottom: 16px; translate: -50% 0; display: flex; gap: 8px; align-items: center; padding: 10px 14px;
+    border-radius: 14px; background: rgba(14, 6, 12, 0.82); border: 1px solid var(--line); backdrop-filter: blur(8px);
+    width: min(960px, calc(100vw - 32px)); box-sizing: border-box; transition: opacity .4s; }
+  #ui.idle { opacity: 0; }
+  #ui button { font: inherit; color: #fff; background: rgba(255, 42, 74, 0.14); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; cursor: pointer; white-space: nowrap; }
+  #ui button:hover { background: rgba(255, 42, 74, 0.3); }
+  #play { background: var(--accent) !important; font-weight: 700; }
+  #nowTitle { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; }
+  #seek { flex: 1; min-width: 60px; accent-color: var(--accent); }
+  #time { font: 12px ui-monospace, Menlo, monospace; white-space: nowrap; color: #a88f9b; }
+  #menu { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(5, 0, 3, 0.86); z-index: 2; overflow: auto; padding: 24px 16px; box-sizing: border-box; }
+  #menu[hidden] { display: none; }
+  #menu .inner { width: min(1080px, 100%); }
+  #menu h1 { margin: 0; font: 400 clamp(28px, 4vw, 44px)/1.1 "Dela Gothic One", sans-serif; letter-spacing: .04em; text-shadow: 2px 0 #ff2a4a, -2px 0 #3fd7ff; }
+  #menu p { color: #a88f9b; margin: 8px 0 18px; }
+  #menu a { color: #ffb0bd; }
+  #list { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 12px; }
+  #list button { text-align: left; font: inherit; color: #fff; border: 1px solid rgba(255, 255, 255, 0.14); border-radius: 14px; padding: 16px 18px; cursor: pointer;
+    background: radial-gradient(120% 140% at 30% 20%, var(--c), var(--e)); transition: transform .15s, border-color .15s; }
+  #list button:hover { transform: translateY(-2px); border-color: var(--a); }
+  #list small { display: block; font: 11px ui-monospace, Menlo, monospace; letter-spacing: .15em; opacity: .8; }
+  #list strong { display: block; margin: 6px 0 4px; font-size: 18px; font-weight: 900; }
+  #list span { display: block; color: var(--a); font-weight: 700; }
+  #list em { display: block; font-style: normal; font-size: 12px; opacity: .75; margin-top: 8px; }
+  #msg { position: fixed; top: 16px; left: 50%; translate: -50% 0; background: rgba(0, 0, 0, .6); padding: 6px 12px; border-radius: 8px; z-index: 3; }
+  #msg:empty { display: none; }
+  body.render #ui, body.render #menu, body.render #msg { display: none !important; }
+  @media (max-width: 720px) { #ui { flex-wrap: wrap; } #seek { order: 9; flex-basis: 100%; } #nowTitle { flex: 1; } }
+</style>
+<script type="importmap">
+{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }
+</script>
+</head>
+<body>
+<canvas id="pv" width="1920" height="1080"></canvas>
+<div id="ui">
+  <button id="toMenu">☰ 選歌</button>
+  <button id="prev" aria-label="上一首">⏮</button>
+  <button id="play">▶ 播放</button>
+  <button id="next" aria-label="下一首">⏭</button>
+  <span id="nowTitle"></span>
+  <input id="seek" type="range" min="0" max="1000" value="0" aria-label="播放位置">
+  <span id="time">0:00 / 0:00</span>
+</div>
+<div id="menu" hidden>
+  <div class="inner">
+    <h1>INSIDE IDENTITY · PV</h1>
+    <p>八位班底重新繪製成 INSIDE IDENTITY 制服風，為 9 首歌各做一支 PV。選一首即時播放（Space 播放／暫停、← → ±5 秒、N／P 換歌、F 全螢幕、Esc 回選單）。<a href="index.html">← 3D 舞台</a></p>
+    <div id="list"></div>
+  </div>
+</div>
+<div id="msg"></div>
+<script type="module" src="js/pv/pv.js"></script>
+</body>
+</html>

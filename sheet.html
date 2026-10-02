@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><title>Cast Sheet</title>
+<style>html,body{margin:0;background:#200006}canvas{display:block;width:100vw}</style>
+<script type="importmap">{ "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.module.js" } }</script>
+</head><body><canvas id="c" width="1920" height="1080"></canvas>
+<script type="module">
+import { drawCharacter, CAST_KEYS } from './js/pv/art.js';
+import { MOVES } from './js/choreo.js';
+const q = new URLSearchParams(location.search);
+const g = document.getElementById('c').getContext('2d');
+const move = q.get('move') || 'bounce', beat = +(q.get('beat') || 0.5), zoom = +(q.get('zoom') || 0);
+g.fillStyle = '#b0102e'; g.fillRect(0, 0, 1920, 1080);
+if (zoom) {
+  CAST_KEYS.forEach((k, i) => {
+    const x = 120 + (i % 4) * 480, y = 540 * Math.floor(i / 4);
+    g.save(); g.beginPath(); g.rect(x - 120, y, 480, 540); g.clip();
+    drawCharacter(g, k, MOVES[move](beat), x + 120, y + 540 + 1400 * 0.0 + 1350, 2.4, { t: 1, mouth: 0.6 });
+    g.restore();
+  });
+} else {
+  CAST_KEYS.forEach((k, i) => drawCharacter(g, k, MOVES[move](beat), 130 + i * 237, 1020, 1.32, { t: 1, mouth: 0.5, wink: i === 1 ? -1 : 0 }));
+}
+if (q.has('snap')) document.fonts.ready.then(() => document.getElementById('c').toBlob((b) => fetch('/__snap', { method: 'POST', body: b }), 'image/jpeg', 0.9));
+</script></body></html>

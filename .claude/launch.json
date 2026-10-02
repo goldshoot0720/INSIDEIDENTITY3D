@@ -3,8 +3,8 @@
   "configurations": [
     {
       "name": "inside-identity-3d",
-      "runtimeExecutable": "python3",
-      "runtimeArgs": ["-m", "http.server", "5173"],
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["/Users/feng33/Documents/INSIDEIDENTITY3D/tools/serve.mjs", "5173"],
       "port": 5173
     }
   ]

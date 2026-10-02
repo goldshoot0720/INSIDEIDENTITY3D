@@ -27,3 +27,12 @@ python3 -m http.server 5173
 - `js/youtube.js`：YouTube IFrame API 播放器、網址解析與平滑播放時間
 - `js/stage.js`：魔法陣、光柱、聚光燈、粒子
 - `js/main.js`：場景、角色載入（含從 FBX 抽取內嵌貼圖）、自動運鏡、後製與 UI
+
+## PV（`pv.html`）
+
+八位班底依 INSIDE IDENTITY MV 的制服風重新繪製成 2D 動畫人物（`js/pv/art.js`：深色西裝外套、格紋百褶裙、賽璐璐上色與描邊，保留各自特徵——鯨魚鰭耳與尾巴、企鵝帽、紅雙馬尾貓耳虎牙、眼鏡鬍渣、三花／白貓耳尾），並為 [Effects](https://github.com/goldshoot0720/Effects) 的 9 首歌各做一支 PV：標題卡、排排站、特寫名牌、四格臉部拼貼、`.pet` 視窗、大字歌詞、個人秀與謝幕，配撕紙黑框與底部字幕。舞步沿用 `js/choreo.js`，依歌曲段落與 BPM 排程（`js/pv/director.js`），每首的班底與配色在 `js/pv/story.js`。
+
+- 即時播放：`node tools/serve.mjs` 後開 http://localhost:5173/pv.html
+- 輸出 MP4：`node tools/render-pv.mjs`（全部）或 `node tools/render-pv.mjs s023 --from 20 --to 40`，需要 Google Chrome 與 ffmpeg，輸出到 `pv/`
+- 重新匯入歌曲：`node tools/import-songs.mjs ../Effects`
+- `sheet.html`：角色設定表；`tools/snap.mjs` 存單張畫面

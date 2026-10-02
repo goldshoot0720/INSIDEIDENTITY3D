@@ -319,3 +319,6 @@ export function sectionAt(beat) {
 }
 
 export const idleSpec = (time) => MOVES.bounce(time * 0.9);
+
+// pose-building helpers, shared with the PV director (js/pv/director.js)
+export { V, E, base, knees, hipsOnLeft, mixSpec };
