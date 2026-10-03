@@ -3,8 +3,8 @@
 // all produce the same picture.
 import { drawCharacter, headOf, CAST } from './art.js';
 import { buildPlan, danceSpec, idolSpec } from './director.js';
-import { ORDER, STORY } from './story.js';
-import { SONG_DATA } from './songs-data.js';
+import { ORDER, STORY, songInfo } from './story.js';
+import { YouTubeSource } from '../youtube.js';
 
 const W = 1920, H = 1080, FPS = 30;
 const q = new URLSearchParams(location.search);
@@ -210,9 +210,11 @@ const SHOTS = {
     lineup(t, beat, { scale: 0.86, feetY: 1000, spread: 360, idol: true });
     const title = plan.song.title, n = [...title].length;
     const lines = n > 9 ? splitTitle(title) : [title];
-    const size = Math.min(150, Math.floor(1500 / Math.max(...lines.map((l) => [...l].length))));
-    lines.forEach((l, k) => popTitle(l, W / 2, 200 + k * size * 1.1 - (lines.length - 1) * 20, size, t - sh.start, 0.3 + k * 0.35));
-    pill(plan.song.tagline, W / 2, 200 + lines.length * size * 1.1 + 10, t - sh.start, 1.2, plan.story.pal.accent2);
+    // two-line titles shrink so the tagline pill stays clear of the dancers' heads
+    const size = Math.min(lines.length > 1 ? 112 : 150, Math.floor(1500 / Math.max(...lines.map((l) => [...l].length))));
+    const y0 = lines.length > 1 ? 150 : 200;
+    lines.forEach((l, k) => popTitle(l, W / 2, y0 + k * size * 1.08, size, t - sh.start, 0.3 + k * 0.35));
+    pill(plan.song.tagline, W / 2, y0 + lines.length * size * 1.08 + 10, t - sh.start, 1.2, plan.story.pal.accent2);
     head(t, sh, 'INSIDE IDENTITY · PV', 0.2);
   },
   lineup(t, beat, en, sh) {
@@ -478,9 +480,9 @@ function render(t) {
 }
 
 // ---------- loading ----------
-async function load(id) {
-  plan = buildPlan(id);
-  plan.seed = ORDER.indexOf(id) * 31 + 7;
+async function load(id, dur) {
+  plan = buildPlan(id, { dur });
+  plan.seed = (ORDER.indexOf(id) - 1) * 31 + 7; // −1: keep the seeds the 9 file songs had before 'ii' was listed first
   frame = tornFrame(plan.seed);
   DOTS ||= halftone();
   const sample = plan.song.title + plan.song.tagline + plan.song.lines.map((l) => l.text).join('') + 'THANK YOU!';
@@ -492,7 +494,7 @@ async function load(id) {
 }
 
 // ---------- modes ----------
-const songId = () => { const s = q.get('song'); return SONG_DATA[s] ? s : ORDER[+s || 0]; };
+const songId = () => { const s = q.get('song'); return songInfo(s) ? s : ORDER[+s || 0]; };
 
 async function renderMode() {
   document.body.classList.add('render');
@@ -500,6 +502,7 @@ async function renderMode() {
   const post = (path, body) => fetch(`/__pv/${path}?job=${JOB}`, { method: 'POST', body });
   try {
     await load(id);
+    if (!plan.song.audio) throw new Error(`${plan.song.title} 是 YouTube 串流，無法輸出 MP4`);
     const from = +(q.get('from') || 0), to = Math.min(plan.dur, +(q.get('to') || plan.dur));
     const frames = Math.ceil((to - from) * FPS);
     await post('meta', JSON.stringify({ id, title: plan.song.title, file: `${id} ${plan.song.title}`, audio: plan.song.audio, fps: FPS, frames, from, to, bpm: plan.song.bpm }));
@@ -522,33 +525,64 @@ async function snapMode() {
   } catch (err) { fetch('/__snap?error=1', { method: 'POST', body: String(err?.stack || err) }); }
 }
 
-// live player
+// live player — a local MP3, or the YouTube player as the clock
 const audio = new Audio();
-let current = null, raf = 0, idleTimer = 0;
+let yt = null, current = null, raf = 0, idleTimer = 0;
+const isYT = () => !!plan?.song.yt;
+const clock = {
+  time: (dt) => (isYT() ? yt?.time(dt) || 0 : audio.currentTime || 0),
+  get paused() { return isYT() ? !yt?.playing : audio.paused; },
+  play() { if (isYT()) yt?.play(); else audio.play().catch(() => {}); },
+  pause() { audio.pause(); yt?.pause(); },
+  seek(t) { if (isYT()) yt?.seek(t); else audio.currentTime = t; },
+};
 function menu(show) {
   $('menu').hidden = !show;
-  if (show) { audio.pause(); syncUI(); }
+  if (show) { clock.pause(); syncUI(); }
 }
 async function play(id, autoplay = true) {
   current = id;
+  clock.pause();
   $('msg').textContent = '載入中…';
   await load(id);
-  $('msg').textContent = '';
-  audio.src = plan.song.audio;
-  audio.currentTime = 0;
   history.replaceState(null, '', `?song=${id}`);
   menu(false);
-  if (autoplay) audio.play().catch(() => {});
+  $('ytBox').hidden = !isYT();
+  if (isYT()) {
+    audio.removeAttribute('src');
+    yt ||= new YouTubeSource('ytPlayer', {
+      onState: (s) => { if (s === 0 && current === id) step(1); syncUI(); },
+      onError: (m) => { $('msg').textContent = m; },
+    });
+    try { await yt.load(plan.song.yt); $('msg').textContent = ''; } catch (err) { $('msg').textContent = err.message; }
+    if (autoplay) yt.play();
+  } else {
+    $('msg').textContent = '';
+    audio.src = plan.song.audio;
+    audio.currentTime = 0;
+    if (autoplay) clock.play();
+  }
   syncUI();
   cancelAnimationFrame(raf);
-  const loop = () => { render(audio.currentTime || 0); syncUI(); raf = requestAnimationFrame(loop); };
+  let last = performance.now();
+  const loop = (now = performance.now()) => {
+    const dt = Math.min(0.1, (now - last) / 1000); last = now;
+    // the YouTube duration is only known once the video is cued: re-plan to fit it
+    const d = isYT() ? yt?.player?.getDuration?.() || 0 : 0;
+    if (d > 30 && Math.abs(d - plan.dur) > 1) { const { seed } = plan; plan = buildPlan(current, { dur: d }); plan.seed = seed; }
+    const t = clock.time(dt);
+    render(clock.paused && t < 0.05 ? 4 : t); // paused at the start: show the title card as a poster
+    syncUI();
+    raf = requestAnimationFrame(loop);
+  };
   loop();
 }
 function syncUI() {
   if (!plan) return;
-  $('play').textContent = audio.paused ? '▶ 播放' : '❚❚ 暫停';
-  $('time').textContent = `${fmt(audio.currentTime || 0)} / ${fmt(plan.dur)}`;
-  if (document.activeElement !== $('seek')) $('seek').value = String(((audio.currentTime || 0) / plan.dur) * 1000);
+  const t = clock.time(0);
+  $('play').textContent = clock.paused ? '▶ 播放' : '❚❚ 暫停';
+  $('time').textContent = `${fmt(t)} / ${fmt(plan.dur)}`;
+  if (document.activeElement !== $('seek')) $('seek').value = String((t / plan.dur) * 1000);
   $('nowTitle').textContent = plan.song.title;
 }
 function step(d) { const i = (ORDER.indexOf(current) + d + ORDER.length) % ORDER.length; play(ORDER[i]); }
@@ -556,36 +590,37 @@ function step(d) { const i = (ORDER.indexOf(current) + d + ORDER.length) % ORDER
 function liveMode() {
   const list = $('list');
   ORDER.forEach((id, n) => {
-    const s = SONG_DATA[id], st = STORY[id];
+    const s = songInfo(id), st = STORY[id];
     const b = document.createElement('button');
     b.style.setProperty('--c', st.pal.center); b.style.setProperty('--e', st.pal.edge); b.style.setProperty('--a', st.pal.accent);
-    b.innerHTML = `<small>PV ${String(n + 1).padStart(2, '0')} · ${fmt(s.dur)} · ${Math.round(s.bpm)} BPM</small><strong></strong><span></span><em></em>`;
+    const meta = s.yt ? `YouTube · ${s.bpm} BPM · 預設` : `${fmt(s.dur)} · ${Math.round(s.bpm)} BPM`;
+    b.innerHTML = `<small>PV ${String(n).padStart(2, '0')} · ${meta}</small><strong></strong><span></span><em></em>`;
     b.querySelector('strong').textContent = s.title;
     b.querySelector('span').textContent = s.tagline;
     b.querySelector('em').textContent = st.cast.map((k) => CAST[k].zh).join(' · ');
     b.onclick = () => play(id);
     list.appendChild(b);
   });
-  $('play').onclick = () => { if (!plan) return; audio.paused ? audio.play() : audio.pause(); syncUI(); };
-  $('seek').oninput = (e) => { if (plan) audio.currentTime = (+e.target.value / 1000) * plan.dur; };
+  $('play').onclick = () => { if (!plan) return; clock.paused ? clock.play() : clock.pause(); syncUI(); };
+  $('seek').oninput = (e) => { if (plan) clock.seek((+e.target.value / 1000) * plan.dur); };
   $('prev').onclick = () => step(-1);
   $('next').onclick = () => step(1);
   $('toMenu').onclick = () => menu(true);
   audio.onended = () => step(1);
   addEventListener('keydown', (e) => {
-    if (e.target.tagName === 'INPUT') return;
+    if (e.target.tagName === 'INPUT' || !plan) return;
     if (e.code === 'Space') { e.preventDefault(); $('play').click(); }
-    else if (e.code === 'ArrowRight') audio.currentTime = Math.min(plan?.dur || 0, audio.currentTime + 5);
-    else if (e.code === 'ArrowLeft') audio.currentTime = Math.max(0, audio.currentTime - 5);
+    else if (e.code === 'ArrowRight') clock.seek(Math.min(plan.dur, clock.time(0) + 5));
+    else if (e.code === 'ArrowLeft') clock.seek(Math.max(0, clock.time(0) - 5));
     else if (e.code === 'Escape') menu(true);
     else if (e.key === 'n' || e.key === 'N') step(1);
     else if (e.key === 'p' || e.key === 'P') step(-1);
     else if (e.key === 'f' || e.key === 'F') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   });
-  addEventListener('mousemove', () => { $('ui').classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => !audio.paused && $('ui').classList.add('idle'), 2500); });
+  addEventListener('mousemove', () => { $('ui').classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => !clock.paused && $('ui').classList.add('idle'), 2500); });
+  // default song: INSIDE IDENTITY from YouTube, paused on the title card
   const s = q.get('song');
-  if (s && SONG_DATA[s]) play(s, false);
-  else { menu(true); load(ORDER[0]).then(() => { render(4); }); }
+  play(s && songInfo(s) ? s : ORDER[0], false);
 }
 
 if (RENDER) renderMode();

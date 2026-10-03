@@ -4,8 +4,7 @@
 // Everything is a pure function of time so any frame can be rendered on its own.
 import { MOVES, V, E, base, knees, hipsOnLeft } from '../choreo.js';
 import { mirrorSpec, blendSpec } from '../rig.js';
-import { SONG_DATA } from './songs-data.js';
-import { STORY, MENTION, SIG } from './story.js';
+import { STORY, MENTION, SIG, songInfo } from './story.js';
 
 const frac = (t) => t - Math.floor(t);
 const dip = (t) => 0.5 + 0.5 * Math.cos(2 * Math.PI * t);
@@ -47,15 +46,35 @@ const POOL = {
 };
 const KIND_LABEL = { intro: 'INTRO', verse: 'VERSE', chorus: 'CHORUS', hook: 'HOOK', break: 'INTERLUDE', outro: 'OUTRO' };
 
-export function buildPlan(id) {
-  const song = SONG_DATA[id], story = STORY[id];
+// YouTube songs have no analysis: 8-bar intro, then 16-bar verse / chorus pairs, with the
+// MV's shouted lines as the "lyrics" (the same calls the 3D stage flashes)
+const CALLS = ['爆ぜろリアル！', '弾けろシナプス！', 'Vanishment this World!', 'Dark Flame Master!', 'INSIDE IDENTITY'];
+function synthSong(info, dur) {
+  const bar = 4 * 60 / info.bpm, sections = [], lines = [];
+  let t = info.beat0 + 8 * bar, k = 0;
+  while (t + 16 * bar <= dur - 4 * bar || !sections.length) {
+    const kind = k % 2 ? 'chorus' : 'verse';
+    sections.push({ kind, start: t, end: Math.min(dur - 1, t + 16 * bar) });
+    for (const at of kind === 'chorus' ? [0, 8] : [4]) {
+      lines.push({ t: t + at * bar, d: 2.4, text: CALLS[lines.length % CALLS.length], sec: sections.length - 1, kind });
+    }
+    t += 16 * bar; k++;
+  }
+  return { ...info, dur, sections, lines };
+}
+
+export function buildPlan(id, { dur: ytDur } = {}) {
+  const info = songInfo(id), story = STORY[id];
+  const song = info.yt ? synthSong(info, ytDur || info.dur) : info;
   const spb = 60 / song.bpm, beat0 = song.beat0, dur = song.dur;
   const beatAt = (t) => (t - beat0) / spb, timeAt = (b) => beat0 + b * spb;
 
   // loudness envelope, normalised to its 95th percentile
-  const raw = Uint8Array.from(atob(song.rms), (ch) => ch.charCodeAt(0));
-  const p95 = [...raw].sort((a, b) => a - b)[Math.floor(raw.length * 0.95)] || 255;
-  const energy = (t) => Math.min(1.2, (raw[Math.max(0, Math.min(raw.length - 1, Math.floor(t * song.rmsFps)))] || 0) / p95);
+  const raw = song.rms ? Uint8Array.from(atob(song.rms), (ch) => ch.charCodeAt(0)) : null;
+  const p95 = raw ? [...raw].sort((a, b) => a - b)[Math.floor(raw.length * 0.95)] || 255 : 1;
+  const energy = raw
+    ? (t) => Math.min(1.2, (raw[Math.max(0, Math.min(raw.length - 1, Math.floor(t * song.rmsFps)))] || 0) / p95)
+    : () => 0.85;
 
   // ---- segments: intro, sections (small gaps absorbed), breaks, outro ----
   const segs = [];

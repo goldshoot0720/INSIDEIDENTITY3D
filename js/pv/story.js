@@ -1,8 +1,19 @@
 // Per-song direction for the PVs: who is on stage (left → right), colours, which moves
 // flavour the choreography, and the words that bring a character into close-up.
 // Cast keys are the 2D characters in ./art.js.
+import { SONG_DATA } from './songs-data.js';
+
+// songs streamed from YouTube: the player is only a clock (its audio can't be analysed or
+// exported), so the director lays out a generic intro / verse / chorus plan on the beat grid
+export const YT_SONGS = {
+  ii: { id: 'ii', title: 'INSIDE IDENTITY', tagline: 'Vanishment this World!', yt: 'hNQdpqp_VdY', bpm: 190, beat0: 0, dur: 270 },
+};
+export const songInfo = (id) => SONG_DATA[id] || YT_SONGS[id];
 
 export const STORY = {
+  // the MV this project is modelled on — its four girls, in its red and black
+  ii: { cast: ['whale', 'gugu', 'ya', 'yu'], theme: 'chuuni', extra: ['vanish', 'cross', 'flame'],
+    pal: { center: '#c8102e', edge: '#1a0004', accent: '#ffffff', accent2: '#3fd7ff' } },
   s023: { cast: ['bubu', 'feng', 'tu', 'baibai'], theme: 'dream', extra: ['roll', 'point'],
     pal: { center: '#4a36b8', edge: '#0b0726', accent: '#ffd23f', accent2: '#5fd0ff' } },
   s024: { cast: ['gugu', 'feng', 'tu', 'whale'], theme: 'volt', extra: ['guitar', 'mic'],
@@ -23,7 +34,8 @@ export const STORY = {
     pal: { center: '#1f8f4c', edge: '#03200e', accent: '#ffd23f', accent2: '#ff4a5a' } },
 };
 
-export const ORDER = ['s023', 's024', 's026', 's027', 's028', 's029', 's062', 's101', 's102'];
+// first entry is the default song of pv.html
+export const ORDER = ['ii', 's023', 's024', 's026', 's027', 's028', 's029', 's062', 's101', 's102'];
 
 // a lyric that names a character pulls them into the close-up
 export const MENTION = [

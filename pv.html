@@ -36,9 +36,12 @@
   #list strong { display: block; margin: 6px 0 4px; font-size: 18px; font-weight: 900; }
   #list span { display: block; color: var(--a); font-weight: 700; }
   #list em { display: block; font-style: normal; font-size: 12px; opacity: .75; margin-top: 8px; }
+  #ytBox { position: fixed; right: 16px; bottom: 84px; width: min(320px, 40vw); aspect-ratio: 16 / 9; border-radius: 10px; overflow: hidden;
+    border: 1px solid var(--line); background: #000; box-shadow: 0 6px 24px rgba(0, 0, 0, .5); }
+  #ytBox iframe { width: 100%; height: 100%; display: block; border: 0; }
   #msg { position: fixed; top: 16px; left: 50%; translate: -50% 0; background: rgba(0, 0, 0, .6); padding: 6px 12px; border-radius: 8px; z-index: 3; }
   #msg:empty { display: none; }
-  body.render #ui, body.render #menu, body.render #msg { display: none !important; }
+  body.render #ui, body.render #menu, body.render #msg, body.render #ytBox { display: none !important; }
   @media (max-width: 720px) { #ui { flex-wrap: wrap; } #seek { order: 9; flex-basis: 100%; } #nowTitle { flex: 1; } }
 </style>
 <script type="importmap">
@@ -59,10 +62,11 @@
 <div id="menu" hidden>
   <div class="inner">
     <h1>INSIDE IDENTITY · PV</h1>
-    <p>八位班底重新繪製成 INSIDE IDENTITY 制服風，為 9 首歌各做一支 PV。選一首即時播放（Space 播放／暫停、← → ±5 秒、N／P 換歌、F 全螢幕、Esc 回選單）。<a href="index.html">← 3D 舞台</a></p>
+    <p>八位班底重新繪製成 INSIDE IDENTITY 制服風，預設搭配原曲 <a href="https://www.youtube.com/watch?v=hNQdpqp_VdY" target="_blank" rel="noopener">INSIDE IDENTITY（YouTube）</a>，另為 9 首歌各做一支 PV。選一首即時播放（Space 播放／暫停、← → ±5 秒、N／P 換歌、F 全螢幕、Esc 回選單）。<a href="index.html">← 3D 舞台</a></p>
     <div id="list"></div>
   </div>
 </div>
+<div id="ytBox" hidden><div id="ytPlayer"></div></div>
 <div id="msg"></div>
 <script type="module" src="js/pv/pv.js"></script>
 </body>

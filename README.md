@@ -32,7 +32,7 @@ python3 -m http.server 5173
 
 八位班底依 INSIDE IDENTITY MV 的制服風重新繪製成 2D 動畫人物（`js/pv/art.js`：深色西裝外套、格紋百褶裙、賽璐璐上色與描邊，保留各自特徵——鯨魚鰭耳與尾巴、企鵝帽、紅雙馬尾貓耳虎牙、眼鏡鬍渣、三花／白貓耳尾），並為 [Effects](https://github.com/goldshoot0720/Effects) 的 9 首歌各做一支 PV：標題卡、排排站、特寫名牌、四格臉部拼貼、`.pet` 視窗、大字歌詞、個人秀與謝幕，配撕紙黑框與底部字幕。舞步沿用 `js/choreo.js`，依歌曲段落與 BPM 排程（`js/pv/director.js`），每首的班底與配色在 `js/pv/story.js`。
 
-- 即時播放：`node tools/serve.mjs` 後開 http://localhost:5173/pv.html
+- 即時播放：`node tools/serve.mjs` 後開 http://localhost:5173/pv.html 。預設搭配原曲 [INSIDE IDENTITY（YouTube）](https://www.youtube.com/watch?v=hNQdpqp_VdY)，由原 MV 的四位少女（鯨魚娘、咕咕嘎嘎、牙妹、魚妹）在紅黑舞台演出；YouTube 只當節拍時鐘（190 BPM），段落為通用的前奏／主歌／副歌排程，無法輸出 MP4
 - 輸出 MP4：`node tools/render-pv.mjs`（全部）或 `node tools/render-pv.mjs s023 --from 20 --to 40`，需要 Google Chrome 與 ffmpeg，輸出到 `pv/`
 - 重新匯入歌曲：`node tools/import-songs.mjs ../Effects`
 - `sheet.html`：角色設定表；`tools/snap.mjs` 存單張畫面
