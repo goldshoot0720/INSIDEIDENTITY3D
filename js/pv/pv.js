@@ -287,8 +287,8 @@ const SHOTS = {
     g.fillStyle = 'rgba(8,0,6,0.62)'; g.fillRect(0, 0, W, H);
     const l = plan.lineAt(t) || plan.lineAt(sh.start + 0.2);
     if (!l) return;
-    const text = l.text, size = fitFont(text, 400, FONT.display, 170, 1640);
-    g.font = `400 ${size}px ${FONT.display}`; g.textBaseline = 'middle'; g.textAlign = 'left';
+    const text = l.text, size = fitFont(text, 900, FONT.sub, 160, 1640);
+    g.font = `900 ${size}px ${FONT.sub}`; g.textBaseline = 'middle'; g.textAlign = 'left';
     const glyphs = [...text], ws = glyphs.map((ch) => g.measureText(ch).width);
     let x = W / 2 - ws.reduce((a, b) => a + b, 0) / 2;
     const lt = t - l.t, jit = Math.exp(-6 * frac(beat)) * 6;
@@ -395,7 +395,7 @@ function petWindow(t, beat, key, s, lt) {
   gr.addColorStop(0, mix(c.color, '#ffffff', 0.82)); gr.addColorStop(1, mix(c.color, '#ffffff', 0.45));
   g.fillStyle = gr; g.fillRect(0, 0, s.w, s.h);
   for (let i = 0; i < 8; i++) star(40 + hash(i + s.x) * (s.w - 80), 90 + hash(i * 3 + s.y) * (s.h - 120), 6 + 8 * hash(i * 5), '#ffffff', 0.9);
-  bust(t, beat, key, s.w / 2, s.h * 0.56, s.h / 210);
+  bust(t, beat, key, s.w / 2, s.h * 0.6, s.h / 230);
   g.restore();
   g.beginPath(); g.roundRect(14, 66, s.w - 28, s.h - 80, 16); g.lineWidth = 4; g.strokeStyle = INK; g.stroke();
   // title bar

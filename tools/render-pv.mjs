@@ -55,7 +55,7 @@ function run(id) {
         out = path.join(outDir, `${m.file} PV${from || to ? ` (${m.from.toFixed(0)}-${m.to.toFixed(0)}s)` : ''}.mp4`);
         const cut = from || to ? ['-ss', String(m.from), '-t', String(m.to - m.from)] : [];
         ff = spawn('ffmpeg', ['-y', '-loglevel', 'error', '-f', 'image2pipe', '-framerate', String(m.fps), '-c:v', 'mjpeg', '-i', 'pipe:0',
-          ...cut, '-i', path.join(ROOT, m.audio), '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'medium', '-crf', '19',
+          ...cut, '-i', path.join(ROOT, m.audio), '-map', '0:v', '-map', '1:a', '-c:v', 'libx264', '-preset', 'medium', '-crf', '22',
           '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-b:a', '192k', '-shortest', '-movflags', '+faststart', out], { stdio: ['pipe', 'inherit', 'inherit'] });
         ff.on('exit', (code) => {
           cleanup();
