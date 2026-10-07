@@ -37,6 +37,25 @@ function mix(hex, to, u) {
 }
 
 let plan = null, frame = null, buf = mk(W, H);
+let viewScale = 1;
+const isCompact = () => matchMedia('(max-width: 820px), (max-height: 500px)').matches;
+// Live playback draws in 1920 space and scales the bitmap to the screen. Export stays 1920×1080.
+function fitCanvas() {
+  if (RENDER || SNAP) return;
+  const cssW = cv.clientWidth || innerWidth;
+  const target = cssW * Math.min(window.devicePixelRatio || 1, 2);
+  const q = Math.min(1, Math.max(0.5, Math.round((target / W) * 8) / 8));
+  const bw = Math.round(W * q), bh = Math.round(H * q);
+  if (q === viewScale && cv.width === bw && cv.height === bh) return;
+  viewScale = q;
+  cv.width = bw;
+  cv.height = bh;
+  buf = mk(bw, bh);
+}
+function placeChrome() {
+  const h = $('ui')?.offsetHeight;
+  if (h) document.documentElement.style.setProperty('--ui-h', `${h}px`);
+}
 
 // ---------- static layers ----------
 // black torn-paper frame around the picture (as in the MV), seeded per song
@@ -457,6 +476,7 @@ function subtitle(t) {
 function render(t) {
   const beat = plan.beatAt(t), en = plan.energy(t);
   const sh = plan.shotAt(t);
+  g.setTransform(viewScale, 0, 0, viewScale, 0, 0);
   g.save();
   // beat punch-in
   const acc = Math.exp(-7 * frac(beat)) * (sh.kind === 'chorus' || sh.kind === 'hook' ? 1 : 0.4);
@@ -467,10 +487,13 @@ function render(t) {
   // cut transition: flash + sliced glitch
   const cu = (t - sh.start) / 0.16;
   if (cu < 1 && sh.start > 0) {
-    const bx = buf.getContext('2d'); bx.drawImage(cv, 0, 0);
+    const bx = buf.getContext('2d');
+    bx.setTransform(1, 0, 0, 1, 0, 0);
+    bx.drawImage(cv, 0, 0);
+    const s = viewScale;
     for (let k = 0; k < 9; k++) {
       const y = Math.floor(hash(k + sh.start) * H), h = 20 + hash(k * 3 + sh.start) * 90;
-      g.drawImage(buf, 0, y, W, h, (hash(k * 7 + sh.start) - 0.5) * 140 * (1 - cu), y, W, h);
+      g.drawImage(buf, 0, y * s, W * s, h * s, (hash(k * 7 + sh.start) - 0.5) * 140 * (1 - cu), y, W, h);
     }
     g.fillStyle = `rgba(255,255,255,${0.5 * (1 - cu)})`; g.fillRect(0, 0, W, H);
   }
@@ -527,7 +550,10 @@ async function snapMode() {
 
 // live player — a local MP3, or the YouTube player as the clock
 const audio = new Audio();
+audio.preload = 'metadata';
+audio.playsInline = true;
 let yt = null, current = null, raf = 0, idleTimer = 0;
+const coarsePointer = matchMedia('(pointer: coarse)').matches;
 const isYT = () => !!plan?.song.yt;
 const clock = {
   time: (dt) => (isYT() ? yt?.time(dt) || 0 : audio.currentTime || 0),
@@ -548,6 +574,9 @@ async function play(id, autoplay = true) {
   history.replaceState(null, '', `?song=${id}`);
   menu(false);
   $('ytBox').hidden = !isYT();
+  $('ytBox').classList.remove('show');
+  $('ytPeek').hidden = !isYT() || !isCompact();
+  $('ytPeek').textContent = '原片';
   if (isYT()) {
     audio.removeAttribute('src');
     yt ||= new YouTubeSource('ytPlayer', {
@@ -563,6 +592,8 @@ async function play(id, autoplay = true) {
     if (autoplay) clock.play();
   }
   syncUI();
+  placeChrome();
+  fitCanvas();
   cancelAnimationFrame(raf);
   let last = performance.now();
   const loop = (now = performance.now()) => {
@@ -606,6 +637,15 @@ function liveMode() {
   $('prev').onclick = () => step(-1);
   $('next').onclick = () => step(1);
   $('toMenu').onclick = () => menu(true);
+  $('full').onclick = () => {
+    const el = document.documentElement;
+    if (document.fullscreenElement) (document.exitFullscreen || document.webkitExitFullscreen)?.call(document);
+    else (el.requestFullscreen || el.webkitRequestFullscreen)?.call(el);
+  };
+  $('ytPeek').onclick = () => {
+    const on = $('ytBox').classList.toggle('show');
+    $('ytPeek').textContent = on ? '隱藏' : '原片';
+  };
   audio.onended = () => step(1);
   addEventListener('keydown', (e) => {
     if (e.target.tagName === 'INPUT' || !plan) return;
@@ -617,7 +657,14 @@ function liveMode() {
     else if (e.key === 'p' || e.key === 'P') step(-1);
     else if (e.key === 'f' || e.key === 'F') document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
   });
-  addEventListener('mousemove', () => { $('ui').classList.remove('idle'); clearTimeout(idleTimer); idleTimer = setTimeout(() => !clock.paused && $('ui').classList.add('idle'), 2500); });
+  const pokeUI = () => { $('ui').classList.remove('idle'); clearTimeout(idleTimer); if (!coarsePointer) idleTimer = setTimeout(() => !clock.paused && $('ui').classList.add('idle'), 2500); };
+  addEventListener('mousemove', pokeUI);
+  addEventListener('pointerdown', pokeUI);
+  if (coarsePointer) cv.addEventListener('click', () => { if ($('menu').hidden && plan) $('play').click(); });
+  const refit = () => { placeChrome(); fitCanvas(); };
+  addEventListener('resize', refit);
+  visualViewport?.addEventListener('resize', refit);
+  refit();
   // default song: INSIDE IDENTITY from YouTube, paused on the title card
   const s = q.get('song');
   play(s && songInfo(s) ? s : ORDER[0], false);

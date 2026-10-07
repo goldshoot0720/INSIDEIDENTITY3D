@@ -1,11 +1,12 @@
 // Stage: magic circle floor, light pillars, moving spotlights, particles.
 import * as THREE from 'three';
 
-function magicCircleTexture() {
-  const S = 1024, c = document.createElement('canvas');
+function magicCircleTexture(S = 1024) {
+  const c = document.createElement('canvas');
   c.width = c.height = S;
   const g = c.getContext('2d');
-  g.translate(S / 2, S / 2);
+  g.scale(S / 1024, S / 1024);
+  g.translate(512, 512);
   g.strokeStyle = '#fff'; g.fillStyle = '#fff';
   g.shadowColor = '#fff'; g.shadowBlur = 8;
   const ring = (r, w) => { g.lineWidth = w; g.beginPath(); g.arc(0, 0, r, 0, Math.PI * 2); g.stroke(); };
@@ -64,16 +65,19 @@ function gradientTexture(flipY = true) {
 }
 
 export class Stage {
-  constructor(scene) {
+  constructor(scene, { lowPower = false } = {}) {
     this.scene = scene;
     this.group = new THREE.Group();
     scene.add(this.group);
     scene.background = new THREE.Color(0x050006);
     scene.fog = new THREE.FogExp2(0x0a0008, 0.055);
+    const circleSeg = lowPower ? 40 : 64;
+    const pillarSeg = lowPower ? 8 : 16;
+    const coneSeg = lowPower ? 12 : 32;
 
     // floor
     const floor = new THREE.Mesh(
-      new THREE.CircleGeometry(30, 64),
+      new THREE.CircleGeometry(30, circleSeg),
       new THREE.MeshStandardMaterial({ color: 0x0b0a0d, roughness: 0.35, metalness: 0.6 }),
     );
     floor.rotation.x = -Math.PI / 2;
@@ -86,7 +90,7 @@ export class Stage {
 
     this.circle = new THREE.Mesh(
       new THREE.PlaneGeometry(7.5, 7.5),
-      new THREE.MeshBasicMaterial({ map: magicCircleTexture(), color: 0xff1f45, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
+      new THREE.MeshBasicMaterial({ map: magicCircleTexture(lowPower ? 512 : 1024), color: 0xff1f45, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }),
     );
     this.circle.rotation.x = -Math.PI / 2;
     this.circle.position.y = 0.01;
@@ -97,7 +101,7 @@ export class Stage {
     this.pillars = [];
     for (let i = 0; i < 9; i++) {
       const m = new THREE.Mesh(
-        new THREE.CylinderGeometry(0.12, 0.35, 14, 16, 1, true),
+        new THREE.CylinderGeometry(0.12, 0.35, 14, pillarSeg, 1, true),
         new THREE.MeshBasicMaterial({ map: gradTex, color: i % 3 ? 0xff1f45 : 0xffffff, transparent: true, opacity: 0.35, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
       );
       m.position.set((i - 4) * 1.6, 7, -5 - Math.abs(i - 4) * 0.4);
@@ -106,7 +110,7 @@ export class Stage {
     }
 
     // particles
-    const N = 900, pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
+    const N = lowPower ? 320 : 900, pos = new Float32Array(N * 3), col = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
       pos[i * 3] = (Math.random() - 0.5) * 24;
       pos[i * 3 + 1] = Math.random() * 10;
@@ -125,7 +129,7 @@ export class Stage {
     const key = new THREE.DirectionalLight(0xffffff, 1.2);
     key.position.set(2, 6, 6);
     key.castShadow = true;
-    key.shadow.mapSize.set(2048, 2048);
+    key.shadow.mapSize.set(lowPower ? 1024 : 2048, lowPower ? 1024 : 2048);
     Object.assign(key.shadow.camera, { left: -5, right: 5, top: 5, bottom: -2, near: 1, far: 20 });
     key.shadow.bias = -0.0005;
     scene.add(key);
@@ -140,7 +144,7 @@ export class Stage {
       scene.add(sp, sp.target);
       // visible cone
       const cone = new THREE.Mesh(
-        new THREE.ConeGeometry(1.9, 7, 32, 1, true),
+        new THREE.ConeGeometry(1.9, 7, coneSeg, 1, true),
         new THREE.MeshBasicMaterial({ map: coneTex, color: colors[i], transparent: true, opacity: 0.05, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide }),
       );
       cone.geometry.translate(0, -3.5, 0);

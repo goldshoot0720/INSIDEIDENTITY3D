@@ -40,10 +40,16 @@ const $ = (id) => document.getElementById(id);
 
 // ---------- renderer / scene ----------
 const canvas = $('gl');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+const compactMq = matchMedia('(max-width: 820px), (max-height: 500px)');
+const isCompact = () => compactMq.matches;
+// Snapshot at startup: phones keep a lighter shadow map, pixel ratio and post stack.
+const lowPower = isCompact();
+const renderer = new THREE.WebGLRenderer({
+  canvas, antialias: !lowPower, powerPreference: lowPower ? 'default' : 'high-performance', stencil: false, alpha: false,
+});
+renderer.setPixelRatio(Math.min(devicePixelRatio || 1, lowPower ? 1.5 : 2));
 renderer.shadowMap.enabled = true;
-renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.shadowMap.type = lowPower ? THREE.PCFShadowMap : THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
 renderer.toneMappingExposure = 0.95;
 
@@ -56,8 +62,13 @@ controls.enableDamping = true;
 controls.maxPolarAngle = Math.PI * 0.52;
 controls.minDistance = 1;
 controls.maxDistance = 16;
+if (lowPower) {
+  controls.enablePan = false; // one finger orbits, two fingers pinch-zoom
+  controls.rotateSpeed = 0.7;
+  controls.zoomSpeed = 0.8;
+}
 
-const stage = new Stage(scene);
+const stage = new Stage(scene, { lowPower });
 
 const composer = new EffectComposer(renderer);
 composer.addPass(new RenderPass(scene, camera));
@@ -85,18 +96,36 @@ const glitch = new ShaderPass({
 composer.addPass(glitch);
 
 function resize() {
-  const w = innerWidth, h = innerHeight;
+  const w = canvas.clientWidth || innerWidth;
+  const h = canvas.clientHeight || innerHeight;
+  if (w < 2 || h < 2) return;
   renderer.setSize(w, h, false);
   composer.setSize(w, h);
-  bloom.resolution.set(w, h);
-  // wide screens: the side panel covers the right edge, so centre the stage in the space left of it
-  const p = w > 720 ? $('panel').offsetWidth + 16 : 0;
-  camera.aspect = (w + p) / h;
-  if (p) camera.setViewOffset(w + p, h, p, 0, w, h);
-  else camera.clearViewOffset();
+  const bs = lowPower ? 0.5 : 1;
+  bloom.resolution.set(Math.max(1, Math.round(w * bs)), Math.max(1, Math.round(h * bs)));
+  // Shift the film so the stage stays in the area the panel does not cover.
+  // Side panel: skip the left of a wider film (content moves left). Bottom sheet: skip the top of a taller film (content moves up).
+  const pr = $('panel').getBoundingClientRect();
+  const cr = canvas.getBoundingClientRect();
+  const overlapW = Math.max(0, Math.min(cr.right, pr.right) - Math.max(cr.left, pr.left));
+  const overlapH = Math.max(0, Math.min(cr.bottom, pr.bottom) - Math.max(cr.top, pr.top));
+  const onBottom = overlapW > w * 0.55 && pr.top > cr.top + h * 0.25;
+  const onSide = !onBottom && overlapH > h * 0.45 && pr.left > cr.left + w * 0.35;
+  if (onBottom) {
+    const p = Math.min(overlapH, h * 0.75);
+    camera.setViewOffset(w, h + p, 0, p, w, h);
+  } else if (onSide) {
+    const p = Math.min(overlapW, w * 0.6);
+    camera.setViewOffset(w + p, h, p, 0, w, h);
+  } else {
+    camera.clearViewOffset();
+    camera.aspect = w / h;
+  }
   camera.updateProjectionMatrix();
 }
 addEventListener('resize', resize);
+visualViewport?.addEventListener('resize', resize);
+compactMq.addEventListener('change', () => { if (!isCompact()) setSheetOpen(true); resize(); });
 resize();
 
 // ---------- characters ----------
@@ -149,41 +178,64 @@ async function loadTexture(blob) {
   const tex = await new THREE.TextureLoader().loadAsync(url);
   URL.revokeObjectURL(url);
   tex.colorSpace = THREE.SRGBColorSpace;
-  tex.anisotropy = renderer.capabilities.getMaxAnisotropy();
+  tex.anisotropy = lowPower ? 2 : Math.min(8, renderer.capabilities.getMaxAnisotropy());
   return tex;
+}
+
+function mountCharacter(obj, tex, i) {
+  obj.traverse((o) => {
+    if (!o.isMesh) return;
+    o.castShadow = true;
+    o.frustumCulled = false;
+    const conv = (m) => { if (!m.map && tex) m.map = tex; return toonify(m); };
+    o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material);
+  });
+  const box = new THREE.Box3().setFromObject(obj);
+  const h = box.max.y - box.min.y;
+  const s = HEIGHT / h;
+  obj.scale.multiplyScalar(s);
+  const baseY = -box.min.y * s;
+  obj.position.set(0, baseY, 0);
+  scene.add(obj);
+  obj.updateMatrixWorld(true);
+  const rig = new Rig(obj);
+  const restFootY = rig.footMinY();
+  chars.push({ ...CHARACTERS[i], obj, rig, slot: LAYOUTS[1][0], rank: 0, baseY, restFootY, ground: 0, cur: makeSpec(), started: false, visible: i < MAX_ON_STAGE });
+}
+
+async function fetchCharacter(loader, i, onProgress) {
+  const buf = await fetchBytes(CHARACTERS[i].file, onProgress);
+  const obj = loader.parse(buf, 'models/');
+  const png = embeddedPNG(buf);
+  return { obj, tex: png ? await loadTexture(png) : null, i };
 }
 
 async function loadCharacters() {
   const loader = new FBXLoader();
   const prog = CHARACTERS.map(() => 0);
-  const report = () => { $('loadBar').style.width = `${(prog.reduce((a, b) => a + b) / prog.length) * 100}%`; };
-  const loaded = await Promise.all(CHARACTERS.map(async (c, i) => {
-    const buf = await fetchBytes(c.file, (p) => { prog[i] = p; report(); });
-    const obj = loader.parse(buf, 'models/');
-    const png = embeddedPNG(buf);
-    return { obj, tex: png ? await loadTexture(png) : null };
-  }));
-  loaded.forEach(({ obj, tex }, i) => {
-    obj.traverse((o) => {
-      if (!o.isMesh) return;
-      o.castShadow = true;
-      o.frustumCulled = false;
-      const conv = (m) => { if (!m.map && tex) m.map = tex; return toonify(m); };
-      o.material = Array.isArray(o.material) ? o.material.map(conv) : conv(o.material);
-    });
-    const box = new THREE.Box3().setFromObject(obj);
-    const h = box.max.y - box.min.y;
-    const s = HEIGHT / h;
-    obj.scale.multiplyScalar(s);
-    const baseY = -box.min.y * s;
-    obj.position.set(0, baseY, 0);
-    scene.add(obj);
-    obj.updateMatrixWorld(true);
-    const rig = new Rig(obj);
-    const restFootY = rig.footMinY();
-    chars.push({ ...CHARACTERS[i], obj, rig, slot: LAYOUTS[1][0], rank: 0, baseY, restFootY, ground: 0, cur: makeSpec(), started: false, visible: i < MAX_ON_STAGE });
-  });
+  // Phones show the stage once the four dancers are up; the bench loads after.
+  const firstN = lowPower ? MAX_ON_STAGE : CHARACTERS.length;
+  const report = () => { $('loadBar').style.width = `${(prog.slice(0, firstN).reduce((a, b) => a + b, 0) / firstN) * 100}%`; };
+  $('loadText').textContent = lowPower ? '先載入台上 4 位角色…' : '載入 8 位角色中…';
+  const first = await Promise.all([...Array(firstN).keys()].map((i) => fetchCharacter(loader, i, (p) => { prog[i] = p; report(); })));
+  first.sort((a, b) => a.i - b.i).forEach(({ obj, tex, i }) => mountCharacter(obj, tex, i));
   arrangeStage();
+}
+
+async function loadRemainingCharacters() {
+  const loader = new FBXLoader();
+  for (let i = chars.length; i < CHARACTERS.length; i++) {
+    try {
+      const { obj, tex } = await fetchCharacter(loader, i, () => {});
+      mountCharacter(obj, tex, i);
+      addCharControl(chars[chars.length - 1]);
+    } catch (err) {
+      console.error(err);
+      const hold = document.querySelector(`[data-hold="${CHARACTERS[i].name}"]`);
+      if (hold) hold.querySelector('input')?.insertAdjacentText('afterend', ' 失敗');
+    }
+    await new Promise((r) => setTimeout(r, 40));
+  }
 }
 
 // place the selected characters left-to-right in roster order
@@ -276,7 +328,22 @@ function callout(text) {
   el.classList.remove('show'); void el.offsetWidth; el.classList.add('show');
   flash();
 }
-function setStatus(s) { $('hudStatus').textContent = s; }
+function setStatus(s) {
+  $('hudStatus').textContent = s;
+  const d = $('dockStatus');
+  if (d) d.textContent = s;
+}
+function setMove(s) {
+  $('hudMove').textContent = s;
+  const d = $('dockMove');
+  if (d) d.textContent = s;
+}
+function setSheetOpen(open) {
+  $('panel').classList.toggle('collapsed', !open);
+  $('toggle').setAttribute('aria-expanded', String(open));
+  $('toggle').textContent = open ? '收合' : '面板';
+  requestAnimationFrame(resize);
+}
 
 function setMode(mode) {
   state.mode = mode;
@@ -286,6 +353,8 @@ function setMode(mode) {
   $('secVideo').hidden = mode !== 'video';
   $('secTrack').hidden = mode === 'dance';
   $('pip').hidden = mode === 'dance';
+  $('play').hidden = mode !== 'dance';
+  $('restart').hidden = mode !== 'dance';
   $('pipLabel').textContent = mode === 'camera' ? 'CAMERA' : 'VIDEO';
   state.mirror = mode === 'camera';
   $('mirror').checked = state.mirror;
@@ -417,33 +486,47 @@ function bindUI() {
   $('autoCam').onchange = (e) => { state.autoCam = e.target.checked; };
   controls.addEventListener('start', () => { state.autoCam = false; $('autoCam').checked = false; });
   $('fx').oninput = (e) => { state.fx = +e.target.value; };
-  $('toggle').onclick = () => $('panel').classList.toggle('collapsed');
-  if (matchMedia('(max-width: 720px)').matches) $('panel').classList.add('collapsed');
+  $('toggle').onclick = () => setSheetOpen($('panel').classList.contains('collapsed'));
+  if (isCompact() && $('panel').classList.contains('collapsed')) $('toggle').textContent = '面板';
   addEventListener('keydown', (e) => { if (e.code === 'Space' && e.target === document.body) { e.preventDefault(); if (state.mode === 'dance') togglePlay(); } });
 
-  const box = $('chars');
-  const inputs = chars.map((c) => {
-    const l = document.createElement('label');
-    l.innerHTML = `<input type="checkbox"${c.visible ? ' checked' : ''}><i style="background:${c.color}"></i>${c.name}`;
-    const input = l.querySelector('input');
-    input.onchange = () => {
-      c.visible = input.checked;
-      if (c.visible) c.started = false; // snap to the current move instead of blending from a stale pose
-      arrangeStage();
-      syncPicks();
-    };
-    box.appendChild(l);
-    return input;
-  });
-  // at most MAX_ON_STAGE picked, and never an empty stage
-  const syncPicks = () => {
-    const n = chars.filter((c) => c.visible).length;
-    inputs.forEach((input, i) => {
-      input.disabled = chars[i].visible ? n <= 1 : n >= MAX_ON_STAGE;
-      input.parentElement.classList.toggle('off', input.disabled);
+  chars.forEach(addCharControl);
+  if (lowPower) {
+    CHARACTERS.slice(chars.length).forEach((c) => {
+      const l = document.createElement('label');
+      l.className = 'off';
+      l.dataset.hold = c.name;
+      l.innerHTML = `<input type="checkbox" disabled><i style="background:${c.color}"></i>${c.name}`;
+      $('chars').appendChild(l);
     });
-    $('charCount').textContent = `${n} / ${MAX_ON_STAGE}`;
+  }
+  syncPicks();
+}
+
+const charInputs = [];
+function syncPicks() {
+  const n = chars.filter((c) => c.visible).length;
+  charInputs.forEach((input, i) => {
+    input.disabled = chars[i].visible ? n <= 1 : n >= MAX_ON_STAGE;
+    input.parentElement.classList.toggle('off', input.disabled);
+  });
+  const loading = chars.length < CHARACTERS.length ? ` · 載入 ${chars.length}/${CHARACTERS.length}` : '';
+  $('charCount').textContent = `${n} / ${MAX_ON_STAGE}${loading}`;
+}
+function addCharControl(c) {
+  const l = document.createElement('label');
+  l.innerHTML = `<input type="checkbox"${c.visible ? ' checked' : ''}><i style="background:${c.color}"></i>${c.name}`;
+  const input = l.querySelector('input');
+  input.onchange = () => {
+    c.visible = input.checked;
+    if (c.visible) c.started = false; // snap to the current move instead of blending from a stale pose
+    arrangeStage();
+    syncPicks();
   };
+  const hold = document.querySelector(`[data-hold="${c.name}"]`);
+  if (hold) hold.replaceWith(l);
+  else $('chars').appendChild(l);
+  charInputs.push(input);
   syncPicks();
 }
 
@@ -475,7 +558,19 @@ let landmarksToSpec = null;
 import('./tracker.js').then((m) => { landmarksToSpec = m.landmarksToSpec; }).catch(() => {});
 
 const clock = new THREE.Clock();
+let raf = 0;
+function startLoop() {
+  if (raf || document.hidden) return;
+  clock.getDelta();
+  raf = requestAnimationFrame(frame);
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) { if (raf) cancelAnimationFrame(raf); raf = 0; }
+  else startLoop();
+});
 function frame() {
+  raf = 0;
+  if (document.hidden) return;
   const dt = Math.min(clock.getDelta(), 0.1);
   const now = clock.elapsedTime;
   if (song) state.songT = songTime(dt);
@@ -496,11 +591,11 @@ function frame() {
     }
     if (sec.move === 'solo') {
       const pool = onStage(), star = pool[featured(beat) % pool.length];
-      $('hudMove').textContent = `個人秀 · ${star.name}「${MOVE_LABEL[star.sig]}」`;
-    } else $('hudMove').textContent = MOVE_LABEL[sec.move];
+      setMove(`個人秀 · ${star.name}「${MOVE_LABEL[star.sig]}」`);
+    } else setMove(MOVE_LABEL[sec.move]);
   } else {
     targets = landmarksToSpec ? trackingTargets(now) : chars.map(() => idleSpec(now));
-    $('hudMove').textContent = state.mode === 'camera' ? '攝像頭模仿' : '影片模仿';
+    setMove(state.mode === 'camera' ? '攝像頭模仿' : '影片模仿');
   }
   $('hudBar').textContent = Math.floor(Math.max(0, beat) / 4) + 1;
   $('hudBeat').textContent = (Math.floor(Math.max(0, beat)) % 4) + 1;
@@ -527,12 +622,17 @@ function frame() {
   stage.update(now, beat, en * state.fx);
   const accent = Math.exp(-6 * (beat - Math.floor(beat)));
   state.spike *= Math.exp(-dt * 8);
-  glitch.uniforms.time.value = now;
-  glitch.uniforms.amount.value = (0.0012 + 0.004 * accent * en + 0.012 * state.spike) * state.fx;
-  glitch.uniforms.slice.value = Math.min(1, state.spike * 0.8 + (vanish ? 0.08 : 0)) * state.fx;
-  bloom.strength = (0.45 + 0.35 * accent * en + (vanish ? 0.3 : 0)) * Math.min(1, state.fx);
+  const fxOn = state.fx > 0.001;
+  bloom.enabled = fxOn;
+  glitch.enabled = fxOn;
+  if (fxOn) {
+    glitch.uniforms.time.value = now;
+    glitch.uniforms.amount.value = (0.0012 + 0.004 * accent * en + 0.012 * state.spike) * state.fx;
+    glitch.uniforms.slice.value = Math.min(1, state.spike * 0.8 + (vanish ? 0.08 : 0)) * state.fx;
+    bloom.strength = (0.45 + 0.35 * accent * en + (vanish ? 0.3 : 0)) * Math.min(1, state.fx);
+  }
   composer.render();
-  requestAnimationFrame(frame);
+  if (!document.hidden) raf = requestAnimationFrame(frame);
 }
 
 // ---------- boot ----------
@@ -541,7 +641,9 @@ loadCharacters()
     bindUI();
     $('loading').classList.add('done');
     setStatus('按 ▶ 播放開始跳舞');
-    requestAnimationFrame(frame);
+    resize();
+    startLoop();
+    if (chars.length < CHARACTERS.length) loadRemainingCharacters();
   })
   .catch((err) => {
     console.error(err);
